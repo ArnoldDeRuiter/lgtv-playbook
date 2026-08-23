@@ -1,0 +1,181 @@
+---
+# LG webOS TV (tvtje) — reapply all persistent customizations from the
+# 2026-08-21/22 session. Idempotent: safe to rerun any time (e.g. after a
+# factory reset + re-root via SlopBro — that one-time rooting step is NOT
+# covered here, see ../../slopbro for that).
+#
+# IMPORTANT — no Python on the TV: the target is a busybox-ash-only embedded
+# webOS TV, not a normal Linux box. Standard Ansible modules (copy/template/
+# file/etc.) need Python on the *remote* host, so this can't be a normal
+# `hosts: tvtje` playbook. Instead everything runs on `hosts: localhost` and
+# shells out to `ssh tvtje` / `scp ... tvtje:...` — the `tvtje` alias must
+# already exist in ~/.ssh/config (root@192.168.1.210, dedicated key,
+# ~/.ssh/id_ed25519_tvtje). No special Ansible collections needed, builtin
+# modules only.
+#
+# Run with: ansible-playbook site.yml
+
+- name: Reapply LG webOS TV (tvtje) customizations
+  hosts: localhost
+  gather_facts: false
+  vars:
+    tv_alias: tvtje
+    tv_ip: 192.168.1.210
+    tv_pubkey_path: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_tvtje.pub"
+    homescreen_local_dir: "{{ playbook_dir }}/../homescreen"
+    homescreen_remote_dir: /media/developer/apps/usr/palm/applications/tld.my.customhome
+    amazoff_patchctl: /media/developer/apps/usr/palm/applications/com.amazoff.patcher/tools/patchctl.sh
+    dropbear_bin: /media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/bin/dropbear
+    initd_dir: /var/lib/webosbrew/init.d
+
+  tasks:
+    # --- 1. SSH access -----------------------------------------------------
+
+    - name: Check whether SSH to the TV already works
+      ansible.builtin.command:
+        cmd: ssh -o BatchMode=yes -o ConnectTimeout=5 {{ tv_alias }} true
+      register: ssh_check
+      changed_when: false
+      failed_when: false
+
+    - name: Bootstrap SSH via telnet failsafe shell (only if SSH isn't reachable yet)
+      ansible.builtin.command:
+        cmd: "python3 {{ playbook_dir }}/files/telnet_bootstrap.py"
+      when: ssh_check.rc != 0
+      register: telnet_bootstrap
+      changed_when: "'sshd started' in telnet_bootstrap.stdout"
+
+    - name: Give dropbear a moment to come up after telnet bootstrap
+      ansible.builtin.pause:
+        seconds: 3
+      when: ssh_check.rc != 0
+
+    - name: Confirm SSH now works
+      ansible.builtin.command:
+        cmd: ssh -o BatchMode=yes -o ConnectTimeout=5 {{ tv_alias }} true
+      changed_when: false
+
+    - name: Ensure our pubkey is in root's authorized_keys
+      ansible.builtin.shell: |
+        set -e
+        PUBKEY=$(cat "{{ tv_pubkey_path }}")
+        REMOTE=$(ssh {{ tv_alias }} 'cat /home/root/.ssh/authorized_keys 2>/dev/null' || true)
+        if [ "$REMOTE" != "$PUBKEY" ]; then
+          ssh {{ tv_alias }} "mkdir -p /home/root/.ssh && chmod 700 /home/root/.ssh && printf '%s\n' '$PUBKEY' > /home/root/.ssh/authorized_keys && chmod 600 /home/root/.ssh/authorized_keys && chown 0:0 /home/root/.ssh/authorized_keys"
+          echo CHANGED
+        fi
+      register: authkey_result
+      changed_when: "'CHANGED' in authkey_result.stdout"
+
+    - name: Ensure SSH-enabled flag file exists on the TV
+      ansible.builtin.shell: |
+        set -e
+        if ! ssh {{ tv_alias }} 'test -f /var/luna/preferences/webosbrew_sshd_enabled'; then
+          ssh {{ tv_alias }} 'touch /var/luna/preferences/webosbrew_sshd_enabled'
+          echo CHANGED
+        fi
+      register: flag_result
+      changed_when: "'CHANGED' in flag_result.stdout"
+
+    - name: Ensure dropbear (sshd) is actually running right now, not just flagged for next boot
+      ansible.builtin.shell: |
+        set -e
+        if ! nc -z -w3 {{ tv_ip }} 22; then
+          ssh {{ tv_alias }} 'mkdir -p /var/lib/webosbrew/sshd && setsid {{ dropbear_bin }} -R </dev/null >/dev/null 2>&1 &'
+          echo CHANGED
+        fi
+      register: dropbear_result
+      changed_when: "'CHANGED' in dropbear_result.stdout"
+
+    # --- 2. Custom home-screen override ------------------------------------
+
+    - name: Sync custom home-screen override files to the TV
+      # No cheap way to diff every asset before copying, so this always
+      # reports changed — the actual idempotent behavior lives in the two
+      # tasks below (boot-hook symlink, live-apply).
+      ansible.builtin.shell: |
+        set -e
+        ssh {{ tv_alias }} 'mkdir -p {{ homescreen_remote_dir }}/assets/images/hd {{ homescreen_remote_dir }}/assets/images/2k {{ homescreen_remote_dir }}/assets/images/4k {{ homescreen_remote_dir }}/assets/i18n'
+        scp -q {{ homescreen_local_dir }}/apply.sh {{ tv_alias }}:{{ homescreen_remote_dir }}/apply.sh
+        scp -q {{ homescreen_local_dir }}/assets/home.xml {{ tv_alias }}:{{ homescreen_remote_dir }}/assets/home.xml
+        scp -q {{ homescreen_local_dir }}/assets/images/hd/bg_banner_img.png {{ tv_alias }}:{{ homescreen_remote_dir }}/assets/images/hd/bg_banner_img.png
+        scp -q {{ homescreen_local_dir }}/assets/images/2k/bg_banner_img.png {{ tv_alias }}:{{ homescreen_remote_dir }}/assets/images/2k/bg_banner_img.png
+        scp -q {{ homescreen_local_dir }}/assets/images/4k/bg_banner_img.png {{ tv_alias }}:{{ homescreen_remote_dir }}/assets/images/4k/bg_banner_img.png
+        scp -q {{ homescreen_local_dir }}/assets/i18n/*.json {{ tv_alias }}:{{ homescreen_remote_dir }}/assets/i18n/
+        ssh {{ tv_alias }} 'chmod +x {{ homescreen_remote_dir }}/apply.sh'
+      register: sync_result
+      changed_when: true
+
+    - name: Ensure custom home-screen boot hook is installed
+      ansible.builtin.shell: |
+        set -e
+        CURRENT=$(ssh {{ tv_alias }} 'readlink {{ initd_dir }}/01-custom-homescreen 2>/dev/null' || true)
+        if [ "$CURRENT" != "{{ homescreen_remote_dir }}/apply.sh" ]; then
+          ssh {{ tv_alias }} 'ln -sf {{ homescreen_remote_dir }}/apply.sh {{ initd_dir }}/01-custom-homescreen'
+          echo CHANGED
+        fi
+      register: hook_result
+      changed_when: "'CHANGED' in hook_result.stdout"
+
+    - name: Apply the custom home screen live now (not just next boot)
+      # Always run — apply.sh is written to be safe to rerun (it starts by
+      # umounting/rm -rf'ing its own previous merged copy before rebuilding).
+      ansible.builtin.command:
+        cmd: ssh {{ tv_alias }} "sh {{ homescreen_remote_dir }}/apply.sh"
+      register: apply_result
+      changed_when: true
+
+    # --- 3. Ensure these boot hooks are absent -----------------------------
+
+    - name: Remove sound-mode-fix boot hook (app was fully uninstalled)
+      ansible.builtin.shell: |
+        set -e
+        if ssh {{ tv_alias }} 'test -e {{ initd_dir }}/20-force-sound-mode'; then
+          ssh {{ tv_alias }} 'rm -f {{ initd_dir }}/20-force-sound-mode'
+          echo CHANGED
+        fi
+      register: soundfix_result
+      changed_when: "'CHANGED' in soundfix_result.stdout"
+
+    - name: Remove broken custom-screensaver boot hook (targets qml/main.qml, which doesn't exist on webOS 10's Flutter screensaver)
+      ansible.builtin.shell: |
+        set -e
+        if ssh {{ tv_alias }} 'test -e {{ initd_dir }}/50-custom-screensaver'; then
+          ssh {{ tv_alias }} 'rm -f {{ initd_dir }}/50-custom-screensaver'
+          echo CHANGED
+        fi
+      register: screensaver_result
+      changed_when: "'CHANGED' in screensaver_result.stdout"
+
+    # --- 4. AmazOff Prime Video ad-patcher autostart -----------------------
+
+    - name: Check whether AmazOff autostart hook already exists
+      ansible.builtin.command:
+        cmd: ssh {{ tv_alias }} "test -e {{ initd_dir }}/50-custom-amazoff"
+      register: amazoff_hook_check
+      changed_when: false
+      failed_when: false
+
+    - name: Enable AmazOff autostart
+      # patchctl.sh autostart_toggle FLIPS the current state, so this must
+      # only run when the hook is currently absent — running it again would
+      # turn autostart back off.
+      ansible.builtin.command:
+        cmd: ssh {{ tv_alias }} "sh {{ amazoff_patchctl }} autostart_toggle"
+      when: amazoff_hook_check.rc != 0
+      register: amazoff_toggle
+      changed_when: "'\"autostart\":true' in amazoff_toggle.stdout"
+
+    - name: Ensure the AmazOff ad-patch service is actually running now, not just enabled for next boot
+      ansible.builtin.shell: |
+        set -e
+        STATUS=$(ssh {{ tv_alias }} 'sh {{ amazoff_patchctl }} status')
+        case "$STATUS" in
+          *'"service":"running"'*) ;;
+          *)
+            ssh {{ tv_alias }} 'sh {{ amazoff_patchctl }} start'
+            echo CHANGED
+            ;;
+        esac
+      register: amazoff_start
+      changed_when: "'CHANGED' in amazoff_start.stdout"

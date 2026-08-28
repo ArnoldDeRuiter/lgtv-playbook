@@ -1,6 +1,6 @@
 Draft issue for https://github.com/mareklarek/webos10-homescreen-customization
 
-Status: written, not confirmed posted.
+Status: posted — https://github.com/mareklarek/webos10-homescreen-customization/issues/2 (open, no response yet as of 2026-08-28).
 
 ---
 

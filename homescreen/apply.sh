@@ -6,6 +6,13 @@ OVERRIDE_DIR=/media/developer/apps/usr/palm/applications/tld.my.customhome/asset
 UPPER_DIR=/tmp/weboshome-overlay-upper
 WORK_DIR=/tmp/weboshome-overlay-work
 
+# Boot-time timing investigation (see the mareklarek/webos10-homescreen-customization
+# issue): appends this run's kernel uptime to a persistent log (survives reboots,
+# unlike /tmp) so several boots' worth of "how late does this hook actually fire"
+# data can be compared later. Safe/read-only from the system's perspective --
+# just one append to a file nothing else reads.
+echo "$(date -Iseconds 2>/dev/null || date) uptime=$(cat /proc/uptime)" >> /var/lib/webosbrew/homescreen-boot-timing.log
+
 # Overlay the real assets dir with just the handful of files we actually
 # change, instead of copying the whole ~500-file/28MB tree into /tmp on
 # every boot before bind-mounting the copy over the original. Only the

@@ -180,13 +180,13 @@
       register: amazoff_start
       changed_when: "'CHANGED' in amazoff_start.stdout"
 
-    # --- 5. F1TV login-autofill credentials --------------------------------
+    # --- 5. Login-autofill credentials (F1TV, Family7) ----------------------
     # Optional -- only runs once you've created and encrypted
     # ansible/vault.yml (see vault.yml.example). Deploys a root-only
-    # credentials file the f1tv-webos app's loginfill.py daemon reads to
-    # autofill (never submit) the F1TV login form. Nothing here ever
-    # touches Ansible's own logs/output with the real values -- copy uses
-    # a local temp file, which is removed again immediately after.
+    # credentials file each app's own loginfill.py daemon reads to
+    # autofill (never submit) its login form. Nothing here ever touches
+    # Ansible's own logs/output with the real values -- copy uses a local
+    # temp file, which is removed again immediately after.
 
     - name: Check whether the credentials vault exists yet
       ansible.builtin.stat:
@@ -202,7 +202,10 @@
     - name: Write credentials JSON to a local temp file
       ansible.builtin.copy:
         content: |
-          {"f1tv": {"username": {{ f1tv_username | to_json }}, "password": {{ f1tv_password | to_json }}}}
+          {
+            "f1tv": {"username": {{ f1tv_username | to_json }}, "password": {{ f1tv_password | to_json }}},
+            "family7": {"username": {{ family7_username | to_json }}, "password": {{ family7_password | to_json }}}
+          }
         dest: /tmp/tv-credentials.json
         mode: "0600"
       when: vault_file.stat.exists

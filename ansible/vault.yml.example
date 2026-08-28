@@ -14,4 +14,6 @@
 # credentials in this .example file.
 
 f1tv_username: CHANGEME
-f1tv_password: CHANGEME
+f1tv_password: 
+family7_username: CHANGEME
+family7_password: CHANGEME

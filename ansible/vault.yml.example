@@ -1,0 +1,17 @@
+# Copy this file to vault.yml, fill in real values, then encrypt it:
+#
+#   cp vault.yml.example vault.yml
+#   vi vault.yml                  # replace CHANGEME with real credentials
+#   ansible-vault encrypt vault.yml
+#
+# Requires ../ansible.cfg's vault_password_file to point at a password
+# file that lives OUTSIDE this repo (e.g. ~/.lgtv-vault-pass) -- create
+# that file yourself with a passphrase of your choosing (this protects the
+# vault; it is NOT your F1TV password). See the README for the full setup.
+#
+# vault.yml itself is safe to commit once encrypted -- that's the entire
+# point of ansible-vault. Never commit it unencrypted, and never put real
+# credentials in this .example file.
+
+f1tv_username: CHANGEME
+f1tv_password: CHANGEME

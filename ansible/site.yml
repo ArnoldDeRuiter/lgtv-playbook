@@ -179,3 +179,47 @@
         esac
       register: amazoff_start
       changed_when: "'CHANGED' in amazoff_start.stdout"
+
+    # --- 5. F1TV login-autofill credentials --------------------------------
+    # Optional -- only runs once you've created and encrypted
+    # ansible/vault.yml (see vault.yml.example). Deploys a root-only
+    # credentials file the f1tv-webos app's loginfill.py daemon reads to
+    # autofill (never submit) the F1TV login form. Nothing here ever
+    # touches Ansible's own logs/output with the real values -- copy uses
+    # a local temp file, which is removed again immediately after.
+
+    - name: Check whether the credentials vault exists yet
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/vault.yml"
+      register: vault_file
+
+    - name: Load F1TV credentials from the vault
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/vault.yml"
+      when: vault_file.stat.exists
+      no_log: true
+
+    - name: Write credentials JSON to a local temp file
+      ansible.builtin.copy:
+        content: |
+          {"f1tv": {"username": {{ f1tv_username | to_json }}, "password": {{ f1tv_password | to_json }}}}
+        dest: /tmp/tv-credentials.json
+        mode: "0600"
+      when: vault_file.stat.exists
+      no_log: true
+
+    - name: Deploy credentials to the TV, root-only
+      ansible.builtin.shell: |
+        set -e
+        scp -q /tmp/tv-credentials.json {{ tv_alias }}:/var/lib/webosbrew/tv-credentials.json
+        ssh {{ tv_alias }} 'chmod 600 /var/lib/webosbrew/tv-credentials.json && chown 0:0 /var/lib/webosbrew/tv-credentials.json'
+      when: vault_file.stat.exists
+      register: creds_result
+      changed_when: true
+      no_log: true
+
+    - name: Remove the local plaintext credentials temp file
+      ansible.builtin.file:
+        path: /tmp/tv-credentials.json
+        state: absent
+      when: vault_file.stat.exists

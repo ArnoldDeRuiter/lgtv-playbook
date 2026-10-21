@@ -32,6 +32,20 @@ using normal Ansible remote modules.
   Ansible. **This is also the basis for the separate `webos-home-customizer`
   app repo** (packaged, installable version of the same two presets) — see
   below.
+- **`glasshouse/`** — backup of the [Glasshouse](https://github.com/rorygallagher2024/glasshouse)
+  dashboard/MQTT bridge running on the TV (`tvweb`, dashboard on port 8080):
+  `glasshouse-backup-OLED65G56LS.json.vault`, exported from the dashboard's
+  backup function (Glasshouse 0.118.0, 2026-10-21) and encrypted with this
+  repo's ansible-vault (the same `vault_password` as `vault.yml`). It holds
+  the LG settings toggles, Glasshouse's own config, the home-screen layout and
+  the app list. It has no MQTT broker or credentials (those live in
+  `/var/lib/tvweb/config.json` on the TV, mode 600, and the broker side is in
+  `pikvm-playbook`). To restore, decrypt it, then upload it on the dashboard's
+  backup page:
+  ```sh
+  cd ansible && ansible-vault decrypt --output /tmp/glasshouse-backup.json ../glasshouse/glasshouse-backup-OLED65G56LS.json.vault
+  ```
+  To replace it after a new export: `ansible-vault encrypt --output ../glasshouse/glasshouse-backup-OLED65G56LS.json.vault <new-export.json>` (from `ansible/`), and delete the plaintext.
 - **`github-issue-draft-mareklarek.md`** — drafted GitHub issue for the
   upstream guide's repo about the boot-time delay we diagnosed. Written,
   not confirmed posted yet.

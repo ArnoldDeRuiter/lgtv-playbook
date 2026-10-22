@@ -22,8 +22,6 @@
     tv_alias: tvtje
     tv_ip: 192.168.1.210
     tv_pubkey_path: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_tvtje.pub"
-    homescreen_local_dir: "{{ playbook_dir }}/../homescreen"
-    homescreen_remote_dir: /media/developer/apps/usr/palm/applications/tld.my.customhome
     amazoff_patchctl: /media/developer/apps/usr/palm/applications/com.amazoff.patcher/tools/patchctl.sh
     dropbear_bin: /media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/bin/dropbear
     initd_dir: /var/lib/webosbrew/init.d
@@ -87,45 +85,17 @@
       register: dropbear_result
       changed_when: "'CHANGED' in dropbear_result.stdout"
 
-    # --- 2. Custom home-screen override ------------------------------------
+    # --- 2. Ensure these boot hooks are absent -----------------------------
 
-    - name: Sync custom home-screen override files to the TV
-      # No cheap way to diff every asset before copying, so this always
-      # reports changed — the actual idempotent behavior lives in the two
-      # tasks below (boot-hook symlink, live-apply).
+    - name: Remove custom home-screen boot hook (tld.my.customhome override turned off for good, see ../homescreen)
       ansible.builtin.shell: |
         set -e
-        ssh {{ tv_alias }} 'mkdir -p {{ homescreen_remote_dir }}/assets/images/hd {{ homescreen_remote_dir }}/assets/images/2k {{ homescreen_remote_dir }}/assets/images/4k {{ homescreen_remote_dir }}/assets/i18n'
-        scp -q {{ homescreen_local_dir }}/apply.sh {{ tv_alias }}:{{ homescreen_remote_dir }}/apply.sh
-        scp -q {{ homescreen_local_dir }}/assets/home.xml {{ tv_alias }}:{{ homescreen_remote_dir }}/assets/home.xml
-        scp -q {{ homescreen_local_dir }}/assets/images/hd/bg_banner_img.png {{ tv_alias }}:{{ homescreen_remote_dir }}/assets/images/hd/bg_banner_img.png
-        scp -q {{ homescreen_local_dir }}/assets/images/2k/bg_banner_img.png {{ tv_alias }}:{{ homescreen_remote_dir }}/assets/images/2k/bg_banner_img.png
-        scp -q {{ homescreen_local_dir }}/assets/images/4k/bg_banner_img.png {{ tv_alias }}:{{ homescreen_remote_dir }}/assets/images/4k/bg_banner_img.png
-        scp -q {{ homescreen_local_dir }}/assets/i18n/*.json {{ tv_alias }}:{{ homescreen_remote_dir }}/assets/i18n/
-        ssh {{ tv_alias }} 'chmod +x {{ homescreen_remote_dir }}/apply.sh'
-      register: sync_result
-      changed_when: true
-
-    - name: Ensure custom home-screen boot hook is installed
-      ansible.builtin.shell: |
-        set -e
-        CURRENT=$(ssh {{ tv_alias }} 'readlink {{ initd_dir }}/01-custom-homescreen 2>/dev/null' || true)
-        if [ "$CURRENT" != "{{ homescreen_remote_dir }}/apply.sh" ]; then
-          ssh {{ tv_alias }} 'ln -sf {{ homescreen_remote_dir }}/apply.sh {{ initd_dir }}/01-custom-homescreen'
+        if ssh {{ tv_alias }} 'test -e {{ initd_dir }}/01-custom-homescreen'; then
+          ssh {{ tv_alias }} 'rm -f {{ initd_dir }}/01-custom-homescreen'
           echo CHANGED
         fi
-      register: hook_result
-      changed_when: "'CHANGED' in hook_result.stdout"
-
-    - name: Apply the custom home screen live now (not just next boot)
-      # Always run — apply.sh is written to be safe to rerun (it starts by
-      # umounting/rm -rf'ing its own previous merged copy before rebuilding).
-      ansible.builtin.command:
-        cmd: ssh {{ tv_alias }} "sh {{ homescreen_remote_dir }}/apply.sh"
-      register: apply_result
-      changed_when: true
-
-    # --- 3. Ensure these boot hooks are absent -----------------------------
+      register: homescreen_hook_result
+      changed_when: "'CHANGED' in homescreen_hook_result.stdout"
 
     - name: Remove sound-mode-fix boot hook (app was fully uninstalled)
       ansible.builtin.shell: |
@@ -147,7 +117,7 @@
       register: screensaver_result
       changed_when: "'CHANGED' in screensaver_result.stdout"
 
-    # --- 4. AmazOff Prime Video ad-patcher autostart -----------------------
+    # --- 3. AmazOff Prime Video ad-patcher autostart -----------------------
 
     - name: Check whether AmazOff autostart hook already exists
       ansible.builtin.command:
@@ -180,7 +150,7 @@
       register: amazoff_start
       changed_when: "'CHANGED' in amazoff_start.stdout"
 
-    # --- 5. Login-autofill credentials (F1TV, Family7) ----------------------
+    # --- 4. Login-autofill credentials (F1TV, Family7) ----------------------
     # Optional -- only runs once you've created and encrypted
     # ansible/vault.yml (see vault.yml.example). Deploys a root-only
     # credentials file each app's own loginfill.py daemon reads to

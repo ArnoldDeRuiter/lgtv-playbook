@@ -20,7 +20,9 @@
   gather_facts: false
   vars:
     tv_alias: tvtje
-    tv_ip: 192.168.1.210
+    # read from ~/.ssh/config so a DHCP change only needs the alias updated
+    tv_ip: >-
+      {{ (lookup('pipe', 'ssh -G ' ~ tv_alias) | regex_search('(?m)^hostname (\S+)', '\1'))[0] }}
     tv_pubkey_path: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_tvtje.pub"
     amazoff_patchctl: /media/developer/apps/usr/palm/applications/com.amazoff.patcher/tools/patchctl.sh
     dropbear_bin: /media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/bin/dropbear

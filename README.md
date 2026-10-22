@@ -1,6 +1,6 @@
 # LG webOS TV — rooting & customization notes
 
-TV: `tvtje` (192.168.1.210), LG G5 (2025 OLED), webOS TV 10.3.1 (marketing
+TV: `tvtje` (DHCP, the IP drifts; the alias in `~/.ssh/config` is the source of truth, currently 192.168.1.120), LG G5 (2025 OLED), webOS TV 10.3.1 (marketing
 name "webOS 26"). Rooted via [SlopBro](https://github.com/throwaway96/slopbro)
 (separate repo — the exploit/root tooling itself is out of scope here).
 
@@ -12,7 +12,10 @@ ansible-playbook ansible/site.yml
 
 Idempotent, safe to rerun any time (e.g. after a factory reset + re-root, or
 just to confirm nothing drifted). Covers: SSH access, the custom home screen
-(below), removal of two dead boot hooks, and the AmazOff autostart toggle.
+(below), removal of dead boot hooks, the AmazOff autostart toggle, the
+login-autofill credentials, and Glasshouse (installed or updated from
+`~/git/personal/glasshouse` when its commit differs from the build on the TV;
+its `config.json` with the MQTT settings is left alone, see below).
 See `ansible/site.yml` for the exact task list and what it deliberately does
 **not** manage (listed at the bottom of that file).
 
@@ -116,6 +119,18 @@ tap), and it's unconfirmed whether this was actually done yet.
   (find a button's numeric ID via its on-screen log view, then remap/disable
   it in its "Add keybind" screen). Relevant because this TV's remote is the
   stripped-down variant with no pointer and very few buttons.
+- **Glasshouse** (`tvweb`, dashboard on port 8080, MQTT bridge to Home
+  Assistant) — installed via its own `server/deploy.sh`, which the playbook
+  runs (section 5 of `site.yml`) only when the local clone's commit differs
+  from `/var/lib/tvweb/build.json` on the TV. `/var/lib/tvweb/config.json`
+  (broker, topics, dashboard settings) is TV-owned and not managed here; the
+  broker side is in `pikvm-playbook` (`docs/mosquitto-tls.md`). Glasshouse
+  Home (taking over LG Home) was tried and switched off: it leaves no home
+  screen for the first ~minute after boot. LG's Automatic Standby is set to
+  2 hours (`automaticStandBy` in the `time` settings category), which is what
+  shows "TV will be turned off in 5 minutes" after 2 h without remote input.
+- **NPO Start (black)** (`nl.arnolderuiter.npo`) — own app, see the
+  `npo-webos` repo; installed through the Homebrew Channel, not by this playbook.
 - **Custom home screen** — see `homescreen/`, below.
 
 ## Custom home screen

@@ -26,6 +26,11 @@ Ansible remote modules don't apply here).
   (committed template) + `ansible.cfg` (must stay in `ansible/`, not repo
   root) — login-autofill credentials for F1TV/Family7, ansible-vault
   encrypted, deployed to `/var/lib/webosbrew/tv-credentials.json` on the TV.
+- `ansible/files/ssh-wrapper/ssh` — puts this TV's key on `ssh` for
+  Glasshouse's `deploy.sh` (it calls plain `ssh root@<ip>`); used by section 5
+  of `site.yml`, which deploys Glasshouse from `~/git/personal/glasshouse`.
+- `glasshouse/` — ansible-vault-encrypted Glasshouse backup (restored from
+  the dashboard's backup page, not by the playbook).
 - `homescreen/` — the custom home-screen bind-mount overlay (working copy +
   its own README with manual commands). This is also the source the
   `webos-home-customizer` app repo packages as an installable app.

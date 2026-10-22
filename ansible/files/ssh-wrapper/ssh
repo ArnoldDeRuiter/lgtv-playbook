@@ -1,0 +1,3 @@
+#!/bin/sh
+# Glasshouse's deploy.sh calls plain `ssh root@<ip>`, which would not use this TV's dedicated key; put this ahead of ssh on PATH.
+exec /usr/bin/ssh -i "$HOME/.ssh/id_ed25519_tvtje" -o IdentitiesOnly=yes "$@"

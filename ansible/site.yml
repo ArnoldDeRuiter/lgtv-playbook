@@ -23,6 +23,7 @@
     # read from ~/.ssh/config so a DHCP change only needs the alias updated
     tv_ip: >-
       {{ (lookup('pipe', 'ssh -G ' ~ tv_alias) | regex_search('(?m)^hostname (\S+)', '\1'))[0] }}
+    glasshouse_repo: "{{ lookup('env', 'HOME') }}/git/personal/glasshouse"
     tv_pubkey_path: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_tvtje.pub"
     amazoff_patchctl: /media/developer/apps/usr/palm/applications/com.amazoff.patcher/tools/patchctl.sh
     dropbear_bin: /media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/bin/dropbear
@@ -198,3 +199,70 @@
         path: /tmp/tv-credentials.json
         state: absent
       when: vault_file.stat.exists
+
+    # --- 5. Glasshouse (tvweb): dashboard + MQTT bridge --------------------
+    # Installed/updated with Glasshouse's own server/deploy.sh from the local
+    # clone, and only when the clone's commit differs from the build on the TV
+    # (deploy.sh restarts the server, so it must not run on every playbook run).
+    # deploy.sh calls plain `ssh root@<ip>`, so the wrapper in files/ssh-wrapper
+    # adds this TV's key. Deliberately NOT managed here:
+    #   - /var/lib/tvweb/config.json (MQTT broker, topics, dashboard settings): the TV
+    #     owns it (the dashboard saves into it, deploy.sh never overwrites it) and the
+    #     MQTT password lives in pikvm-playbook's vault. See pikvm-playbook docs/mosquitto-tls.md.
+    #   - Glasshouse Home (LG Home takeover): tried and switched off, it leaves no home
+    #     screen until the server is up after boot.
+    #   - Restoring ../glasshouse/*.json.vault: done from the dashboard's backup page.
+
+    - name: Check for a local Glasshouse clone
+      ansible.builtin.stat:
+        path: "{{ glasshouse_repo }}/server/deploy.sh"
+      register: glasshouse_deploy_script
+
+    - name: Deploy Glasshouse when the TV's build differs from the local clone
+      when: glasshouse_deploy_script.stat.exists
+      block:
+        - name: Get the commit of the local Glasshouse clone
+          ansible.builtin.command:
+            cmd: git -C {{ glasshouse_repo }} rev-parse --short HEAD
+          register: glasshouse_local_commit
+          changed_when: false
+
+        - name: Check the local clone for uncommitted changes under server/
+          ansible.builtin.command:
+            cmd: git -C {{ glasshouse_repo }} status --porcelain -- server
+          register: glasshouse_local_dirty
+          changed_when: false
+
+        - name: Read the build Glasshouse reports on the TV (empty if not installed)
+          ansible.builtin.command:
+            cmd: ssh {{ tv_alias }} 'cat /var/lib/tvweb/build.json 2>/dev/null || true'
+          register: glasshouse_tv_build
+          changed_when: false
+
+        - name: Decide whether Glasshouse needs (re)deploying
+          ansible.builtin.set_fact:
+            glasshouse_deploy_needed: >-
+              {{ glasshouse_tv_build.stdout | trim == ''
+                 or (glasshouse_tv_build.stdout | from_json).commit != glasshouse_local_commit.stdout
+                 or (glasshouse_tv_build.stdout | from_json).dirty | bool
+                 or glasshouse_local_dirty.stdout | trim != '' }}
+
+        - name: Deploy Glasshouse (first install also adds the dashboard tile; updates leave the home screen alone)
+          ansible.builtin.command:
+            cmd: bash {{ glasshouse_repo }}/server/deploy.sh {{ tv_ip }}
+          environment:
+            PATH: "{{ playbook_dir }}/files/ssh-wrapper:{{ lookup('env', 'PATH') }}"
+          when: glasshouse_deploy_needed | bool
+          register: glasshouse_deploy_result
+          changed_when: "'done - open' in glasshouse_deploy_result.stdout"
+
+    - name: Report whether Glasshouse has a config.json on the TV (never changed by this playbook)
+      ansible.builtin.command:
+        cmd: ssh {{ tv_alias }} 'test -f /var/lib/tvweb/config.json && echo present || echo missing'
+      register: glasshouse_config_state
+      changed_when: false
+      failed_when: false
+
+    - name: Show Glasshouse config state
+      ansible.builtin.debug:
+        msg: "Glasshouse /var/lib/tvweb/config.json is {{ glasshouse_config_state.stdout | default('unknown') }} (MQTT settings are TV-owned; see pikvm-playbook docs/mosquitto-tls.md)"

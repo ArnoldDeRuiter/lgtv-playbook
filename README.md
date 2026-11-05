@@ -12,7 +12,7 @@ ansible-playbook ansible/site.yml
 
 Idempotent, safe to rerun any time (e.g. after a factory reset + re-root, or
 just to confirm nothing drifted). Covers: SSH access, the custom home screen
-(below), removal of dead boot hooks, the AmazOff autostart toggle, the
+(below), removal of dead boot hooks, the AmazOff autostart toggle, the RetroArch USB boot hook, the
 login-autofill credentials, and Glasshouse (installed or updated from
 `~/git/personal/glasshouse` when its commit differs from the build on the TV;
 its `config.json` with the MQTT settings is left alone, see below).
@@ -52,6 +52,39 @@ using normal Ansible remote modules.
 - **`github-issue-draft-mareklarek.md`** — drafted GitHub issue for the
   upstream guide's repo about the boot-time delay we diagnosed. Written,
   not confirmed posted yet.
+
+## RetroArch: USB sticks inside its jail
+
+RetroArch (`com.retroarch.webos`, from Homebrew Channel) runs chrooted in
+`/var/palm/jail/com.retroarch.webos` as uid 6283. That jail's `/tmp` is a
+private bind of the TV's `/tmp`, so a stick mounted after the jail exists
+(`/tmp/usb/sda/sda` on this TV, a stick without partition table) shows up in
+RetroArch as an empty folder ("No items"). Known community problem; the usual
+fixes are a boot script or a full reboot with the stick in.
+
+Fix: boot hook `ansible/files/60-retroarch-usb`, placed by the playbook at
+`/var/lib/webosbrew/init.d/60-retroarch-usb` (mode 755, no dot in the name
+because BusyBox run-parts skips those). It starts a small background loop
+(pid in `/tmp/retroarch-usb-bind.pid`, log in `/tmp/retroarch-usb-bind.log`)
+that every 5 s bind-mounts each `/tmp/usb/<disk>/<part>` into the jail when
+the jail does not already show it, and lazily unmounts jail binds whose stick
+is gone. Never blocks boot. Tested 2026-11-05: bind and release with a fake
+tmpfs stick, then a real reboot (hook started at boot, a freshly launched
+RetroArch listed the stick).
+
+Manual commands:
+
+```sh
+ssh tvtje /var/lib/webosbrew/init.d/60-retroarch-usb          # start (no-op if running)
+ssh tvtje 'cat /tmp/retroarch-usb-bind.log'                     # what it did
+ssh tvtje 'kill $(cat /tmp/retroarch-usb-bind.pid); rm /var/lib/webosbrew/init.d/60-retroarch-usb'  # remove
+```
+
+One-off without the hook: `mount --bind /tmp/usb/sda/sda /var/palm/jail/com.retroarch.webos/tmp/usb/sda/sda`.
+
+RetroArch also ships without menu icons: run Online Updater > Update Assets
+once. OpenCDI (CD-i core) notes live in the opencdi-docs repo,
+`retroarch_research_webos/`.
 
 ## SSH access
 

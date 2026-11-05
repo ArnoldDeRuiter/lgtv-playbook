@@ -266,3 +266,23 @@
     - name: Show Glasshouse config state
       ansible.builtin.debug:
         msg: "Glasshouse /var/lib/tvweb/config.json is {{ glasshouse_config_state.stdout | default('unknown') }} (MQTT settings are TV-owned; see pikvm-playbook docs/mosquitto-tls.md)"
+
+    # --- 6. RetroArch USB boot hook: binds USB sticks into the RetroArch jail (its /tmp misses later mounts) ---
+
+    - name: Install or update the RetroArch USB boot hook
+      ansible.builtin.shell: |
+        set -e
+        LOCAL=$(sha256sum {{ playbook_dir }}/files/60-retroarch-usb | cut -d' ' -f1)
+        REMOTE=$(ssh {{ tv_alias }} 'sha256sum {{ initd_dir }}/60-retroarch-usb 2>/dev/null' | cut -d' ' -f1)
+        if [ "$LOCAL" != "$REMOTE" ]; then
+          scp -q {{ playbook_dir }}/files/60-retroarch-usb {{ tv_alias }}:{{ initd_dir }}/60-retroarch-usb
+          ssh {{ tv_alias }} 'chmod 755 {{ initd_dir }}/60-retroarch-usb; P=$(cat /tmp/retroarch-usb-bind.pid 2>/dev/null); [ -n "$P" ] && kill "$P" 2>/dev/null; rm -f /tmp/retroarch-usb-bind.pid'
+          echo CHANGED
+        fi
+      register: retroarch_usb_hook
+      changed_when: "'CHANGED' in retroarch_usb_hook.stdout"
+
+    - name: Ensure the RetroArch USB bind loop is running now, not just at next boot
+      ansible.builtin.command:
+        cmd: ssh {{ tv_alias }} '{{ initd_dir }}/60-retroarch-usb'
+      changed_when: false

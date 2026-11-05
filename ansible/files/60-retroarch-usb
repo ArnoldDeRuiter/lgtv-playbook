@@ -1,0 +1,29 @@
+#!/bin/sh
+# webosbrew boot hook: binds USB sticks into the RetroArch jail, whose private /tmp never sees mounts made after the jail was set up.
+JAIL=/var/palm/jail/com.retroarch.webos
+PIDFILE=/tmp/retroarch-usb-bind.pid
+LOG=/tmp/retroarch-usb-bind.log
+export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PATH"
+
+if [ "$1" != loop ]; then
+  [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null && exit 0
+  setsid "$0" loop </dev/null >>"$LOG" 2>&1 &
+  exit 0
+fi
+
+echo $$ >"$PIDFILE"
+echo "$(date) started"
+while :; do
+  if [ -d "$JAIL/tmp/usb" ]; then
+    hosts=$(awk '$5 ~ "^/tmp/usb/[^/]+/[^/]+$" {print $5}' /proc/self/mountinfo)
+    for m in $hosts; do
+      # Bind only when the jail path does not already show the stick's filesystem.
+      [ "$(stat -c %d "$m")" = "$(stat -c %d "$JAIL$m" 2>/dev/null)" ] && continue
+      mkdir -p "$JAIL$m" && mount --bind "$m" "$JAIL$m" && echo "$(date) bound $m"
+    done
+    for j in $(awk -v p="^$JAIL/tmp/usb/" '$5 ~ p {print $5}' /proc/self/mountinfo); do
+      case " $(echo $hosts) " in *" ${j#$JAIL} "*) ;; *) umount -l "$j" && echo "$(date) released ${j#$JAIL}" ;; esac
+    done
+  fi
+  sleep 5
+done

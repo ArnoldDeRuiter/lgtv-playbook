@@ -1,6 +1,6 @@
 # Sozo on the TV: handover
 
-State as of 2026-11-06 (updated after the first review of #45). Sozo is a third-party streaming app (`professorDeveloper/sozo-tv`); its webOS
+State as of 2026-11-06 (updated after the third round of review on #45). Sozo is a third-party streaming app (`professorDeveloper/sozo-tv`); its webOS
 client arrived in upstream PR #41. This file is the pickup point for continuing work on it with this TV.
 Read `~/git/personal/slopbro/TV-HANDOVER.md` first for TV access (SSH alias `tvtje`, CDP, root bridge).
 
@@ -25,8 +25,8 @@ All based on `upstream/integrating-apple-tv`, pushed to the fork, PRs open upstr
 | `vidapi-hlsjs` | [#42](https://github.com/professorDeveloper/sozo-tv/pull/42) | vidapi `hlsjs: true`: native fails on its `text/html` segments, hls.js plays them |
 | `hls-start-estimate` | [#43](https://github.com/professorDeveloper/sozo-tv/pull/43) | `abrEwmaDefaultEstimate: 5000000`: hls.js starts on the top level (800p) instead of 266p |
 | `subtitle-offset` | [#44](https://github.com/professorDeveloper/sozo-tv/pull/44) | Subtitle timing chips `[−0.5 s] Timing: x [+0.5 s] [Reset]` in the panel header |
-| `webos-native-relabel` | [#45](https://github.com/professorDeveloper/sozo-tv/pull/45) | Loopback relay service so the native player plays vidapi; stacked on #42. Head `3aea7589` (pushed) |
-| `tv-build` (local only) | – | All four merged; this is what the TV runs (`c18d5fe0`) |
+| `webos-native-relabel` | [#45](https://github.com/professorDeveloper/sozo-tv/pull/45) | Loopback relay service so the native player plays vidapi; stacked on #42. Head `93227436` (push pending, see below) |
+| `tv-build` (local only) | – | All four merged; this is what the TV runs (`046cb157`) |
 
 ### Review status
 
@@ -44,8 +44,26 @@ uz/ru strings in #44 approved. On #45 he chose the on-device relay over the back
 3. Backpressure and redirect abort. **Done** (`0b0eb1aa`): media is piped after sniffing the first chunk; each
    redirect hop aborts its request; client close aborts the live hop.
 
-He also asked whether sportstv plays: yes, see Findings. A reply covering all of this was drafted for Captain
-to post; check #45 for whether it went out and for any follow-up.
+Later rounds on #45 (all fixed, tested, and run on the TV):
+
+4. A redirect to a non-http scheme crashed the relay (`ERR_INVALID_PROTOCOL` in the response callback).
+   **Done** (`ffc565b1`): redirect targets go through `isUpstream`, `http.get` is wrapped in try/catch, both 502.
+5. Non-Latin paths (`/файл.ts`) threw `ERR_UNESCAPED_CHARACTERS`. **Done** (`93227436`): non-ASCII path
+   characters are percent-encoded before the request.
+6. Expanded IPv6 (`0:0:0:0:0:0:0:1`, `0:0:0:0:0:ffff:7f00:1`) passed `isPublicAddress`. **Done** (`93227436`):
+   IPv6 is normalised to eight groups first; IPv4-mapped, 6to4, Teredo and NAT64 forms are covered.
+
+Each fix's test fails on the commit before it. CI upstream was green at 164/164 before the last two commits;
+locally 166 unit / 100 browser. He also asked whether sportstv plays (yes, see Findings) and for the PR's
+Evidence to be updated.
+
+Hand-off state at the time of writing: Captain runs `update-45.sh` (pushes `webos-native-relabel` and replaces
+#45's description with an updated Evidence section) and posts the combined reply from
+`~/git/personal/lgtv/sozo-pr45-reply.md` (not committed). Both scripts and the new description lived in the
+session scratchpad, which is temporary; the pattern is: check the token belongs to ArnoldDeRuiter via
+`GET /user`, push with `-c http.extraheader="AUTHORIZATION: basic <base64 user:token>"`, then
+`PATCH /repos/professorDeveloper/sozo-tv/pulls/45` with `{"body": ...}`. Check #45 for whether both happened
+and for any further review.
 
 Open question in #45 to @professorDeveloper: fix vidapi's content type in the backend relay from #36
 (`/api/contents/media-segment`) instead of on the device. If he says yes: the backend must accept vidapi's
@@ -88,7 +106,8 @@ a raw WebSocket client (handshake as in any app's `loginfill.py`). `window.Sozo`
   in 0.9 s. Relabelled (`video/mp2t`, playlists `application/vnd.apple.mpegurl`): native plays, first frame
   ~1.0-1.7 s, settles on 1920x800. Segment host sends `Access-Control-Allow-Origin: *`.
 - **Relay service:** loopback only, free port, per-run hex token; the app holds a subscription to keep it alive.
-  Private, Sozo-only caller, public upstreams only (tests: `test/relay.test.js`). ES5 for webOS 4's Node.
+  Private, Sozo-only caller, public upstreams only (IPv6 normalised), non-ASCII paths percent-encoded, any URL
+  `http.get` rejects answers 502 (tests: `test/relay.test.js`). ES5 for webOS 4's Node.
   `ares-package` always prints a Node-version notice for services; `package.js` whitelists exactly that line.
 - **sportstv:** plays natively at 1920x1080 on the TV without the relay or hls.js (Setanta Sports 1 Eurasia via
   `stream.mcquack.net`, Futbol via `185.121.1.163:8083`, both plain HTTP). Live channels get their stream via
@@ -107,6 +126,7 @@ a raw WebSocket client (handshake as in any app's `loginfill.py`). `window.Sozo`
 - `pkill -f <pattern>` inside an `ssh tvtje '...'` one-liner matches its own command line and drops the session.
 - Leaving a live channel: Back opens "Keep watching / Leave"; Leave is one Right then OK. Synthetic key events
   need `keyCode` set via `Object.defineProperty` (see `pressCode` in `webos/test/browser/harness.js`).
+- `httpbin.org/redirect-to` refuses `ftp:` targets with its own 403, so it can't test a non-http redirect live.
 - PR pushes need a token with `repo` and `workflow` scope (the base branch carries workflow changes the fork
   lacks). The push/PR scripts read `GH_TOKEN`; Captain runs them himself.
 

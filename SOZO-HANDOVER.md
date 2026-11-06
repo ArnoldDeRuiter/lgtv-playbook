@@ -25,7 +25,7 @@ All based on `upstream/integrating-apple-tv`, pushed to the fork, PRs open upstr
 | `vidapi-hlsjs` | [#42](https://github.com/professorDeveloper/sozo-tv/pull/42) | vidapi `hlsjs: true`: native fails on its `text/html` segments, hls.js plays them |
 | `hls-start-estimate` | [#43](https://github.com/professorDeveloper/sozo-tv/pull/43) | `abrEwmaDefaultEstimate: 5000000`: hls.js starts on the top level (800p) instead of 266p |
 | `subtitle-offset` | [#44](https://github.com/professorDeveloper/sozo-tv/pull/44) | Subtitle timing chips `[−0.5 s] Timing: x [+0.5 s] [Reset]` in the panel header |
-| `webos-native-relabel` | [#45](https://github.com/professorDeveloper/sozo-tv/pull/45) | Loopback relay service so the native player plays vidapi; stacked on #42. Head `93227436` (pushed) |
+| `webos-native-relabel` | [#45](https://github.com/professorDeveloper/sozo-tv/pull/45) | Loopback relay service so the native player plays vidapi; stacked on #42. Head `02ca3f60` (pushed) |
 | `tv-build` (local only) | – | All four merged; this is what the TV runs (`046cb157`) |
 
 ### Review status
@@ -52,15 +52,18 @@ Later rounds on #45 (all fixed, tested, and run on the TV):
    characters are percent-encoded before the request.
 6. Expanded IPv6 (`0:0:0:0:0:0:0:1`, `0:0:0:0:0:ffff:7f00:1`) passed `isPublicAddress`. **Done** (`93227436`):
    IPv6 is normalised to eight groups first; IPv4-mapped, 6to4, Teredo and NAT64 forms are covered.
+7. `url.parse`/`url.resolve` threw `ERR_INVALID_URL` outside the `try` (e.g. `http://[bad/x`, also on Node 20).
+   **Done** (`663ba9c8`): bad target or redirect answers 502, unparsable playlist lines are dropped.
+8. README still called sportstv untried. **Done** (`02ca3f60`). Not run on the TV (Captain: CI only).
 
 Each fix's test fails on the commit before it. CI upstream was green at 164/164 before the last two commits;
-locally 166 unit / 100 browser. He also asked whether sportstv plays (yes, see Findings) and for the PR's
+locally 168 unit / 99 browser on this branch. He also asked whether sportstv plays (yes, see Findings) and for the PR's
 Evidence to be updated.
 
 Current state: all four branches are pushed and match local. #45's description was replaced with updated
 Evidence and Merge Danger. Captain posted the combined #45 reply and short confirmations on #42-#44 (browser
 test counts and TV results, which upstream CI doesn't cover). The dev approved #42, #43 and #44 and said he'd
-merge once CI is green; #45 waits on his response. Only #45's Developer Mode / older webOS request stays
+merge once CI is green; #45: he said it's ready once 7-8 are in; he'll release it as a pre-release labelled "tested on rooted webOS 10.3 only" and merge #42-#44 first. 7-8 pushed and replied to. Only #45's Developer Mode / older webOS request stays
 unmet (not possible here, said so in the reply).
 
 Next: when #42 merges, #45's diff shrinks to the relay commits; if GitHub reports a conflict, update the

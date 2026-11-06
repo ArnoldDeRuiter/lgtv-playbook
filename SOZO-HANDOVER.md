@@ -1,6 +1,6 @@
 # Sozo on the TV: handover
 
-State as of 2026-11-06 (updated after the third round of review on #45). Sozo is a third-party streaming app (`professorDeveloper/sozo-tv`); its webOS
+State as of 2026-11-06, end of day: all review points answered, waiting on the dev. Sozo is a third-party streaming app (`professorDeveloper/sozo-tv`); its webOS
 client arrived in upstream PR #41. This file is the pickup point for continuing work on it with this TV.
 Read `~/git/personal/slopbro/TV-HANDOVER.md` first for TV access (SSH alias `tvtje`, CDP, root bridge).
 
@@ -25,7 +25,7 @@ All based on `upstream/integrating-apple-tv`, pushed to the fork, PRs open upstr
 | `vidapi-hlsjs` | [#42](https://github.com/professorDeveloper/sozo-tv/pull/42) | vidapi `hlsjs: true`: native fails on its `text/html` segments, hls.js plays them |
 | `hls-start-estimate` | [#43](https://github.com/professorDeveloper/sozo-tv/pull/43) | `abrEwmaDefaultEstimate: 5000000`: hls.js starts on the top level (800p) instead of 266p |
 | `subtitle-offset` | [#44](https://github.com/professorDeveloper/sozo-tv/pull/44) | Subtitle timing chips `[−0.5 s] Timing: x [+0.5 s] [Reset]` in the panel header |
-| `webos-native-relabel` | [#45](https://github.com/professorDeveloper/sozo-tv/pull/45) | Loopback relay service so the native player plays vidapi; stacked on #42. Head `93227436` (push pending, see below) |
+| `webos-native-relabel` | [#45](https://github.com/professorDeveloper/sozo-tv/pull/45) | Loopback relay service so the native player plays vidapi; stacked on #42. Head `93227436` (pushed) |
 | `tv-build` (local only) | – | All four merged; this is what the TV runs (`046cb157`) |
 
 ### Review status
@@ -57,13 +57,14 @@ Each fix's test fails on the commit before it. CI upstream was green at 164/164 
 locally 166 unit / 100 browser. He also asked whether sportstv plays (yes, see Findings) and for the PR's
 Evidence to be updated.
 
-Hand-off state at the time of writing: Captain runs `update-45.sh` (pushes `webos-native-relabel` and replaces
-#45's description with an updated Evidence section) and posts the combined reply from
-`~/git/personal/lgtv/sozo-pr45-reply.md` (not committed). Both scripts and the new description lived in the
-session scratchpad, which is temporary; the pattern is: check the token belongs to ArnoldDeRuiter via
-`GET /user`, push with `-c http.extraheader="AUTHORIZATION: basic <base64 user:token>"`, then
-`PATCH /repos/professorDeveloper/sozo-tv/pulls/45` with `{"body": ...}`. Check #45 for whether both happened
-and for any further review.
+Current state: all four branches are pushed and match local. #45's description was replaced with updated
+Evidence and Merge Danger. Captain posted the combined #45 reply and short confirmations on #42-#44 (browser
+test counts and TV results, which upstream CI doesn't cover). The dev approved #42, #43 and #44 and said he'd
+merge once CI is green; #45 waits on his response. Only #45's Developer Mode / older webOS request stays
+unmet (not possible here, said so in the reply).
+
+Next: when #42 merges, #45's diff shrinks to the relay commits; if GitHub reports a conflict, update the
+branch and push. After merges, rebuild the TV install from upstream instead of `tv-build`.
 
 Open question in #45 to @professorDeveloper: fix vidapi's content type in the backend relay from #36
 (`/api/contents/media-segment`) instead of on the device. If he says yes: the backend must accept vidapi's
@@ -72,7 +73,19 @@ rotating hosts, relay playlists as well as segments (webOS native has no playlis
 
 PR bodies follow the `mattpocock-skills:pr` template (Summary, Evidence, Merge Danger), titles `webOS: ...`,
 no AI credit. Pushing workflow-touching history needs a token with the `workflow` scope; Claude does not
-handle tokens, Captain runs pushes/PR creation himself.
+handle tokens, Captain runs pushes/comments himself with `~/.local/bin/sozo-gh` (below).
+
+`sozo-gh` reads `GH_TOKEN`, stops unless it belongs to ArnoldDeRuiter, and works on `~/git/personal/sozo-tv`
+(override with `SOZO_REPO`):
+
+```sh
+GH_TOKEN=<token> sozo-gh push <branch>...                            # push to the fork
+GH_TOKEN=<token> sozo-gh comment <pr> <file.md> [<pr> <file.md>...]  # comment on upstream PRs
+GH_TOKEN=<token> sozo-gh body <pr> <file.md>                         # replace a PR description
+```
+
+Keep reply files on a short path (e.g. `cd ~/sozo-replies` and relative names): a wrapped paste splits the
+command line and nothing gets posted.
 
 ## Build, test, install
 

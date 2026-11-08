@@ -25,15 +25,19 @@
       {{ (lookup('pipe', 'ssh -G ' ~ tv_alias) | regex_search('(?m)^hostname (\S+)', '\1'))[0] }}
     glasshouse_repo: "{{ lookup('env', 'HOME') }}/git/personal/glasshouse"
     tv_pubkey_path: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519_tvtje.pub"
+    # Home Assistant's key (pikvm-playbook tv_night_mode: night mode, now playing, silent volume)
+    tv_authorized_pubkeys:
+      - "{{ tv_pubkey_path }}"
+      - "{{ playbook_dir }}/files/homeassistant-tv.pub"
     amazoff_patchctl: /media/developer/apps/usr/palm/applications/com.amazoff.patcher/tools/patchctl.sh
     dropbear_bin: /media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/bin/dropbear
     initd_dir: /var/lib/webosbrew/init.d
-    # Glasshouse's built-in syslog forwarding to the PiKVM receiver (pikvm-playbook roles/syslog_receiver); kernel off, TV is memory-tight
+    # Glasshouse's built-in syslog forwarding to the PiKVM receiver (pikvm-playbook roles/syslog_receiver); kernel runs dmesg every 30 s
     glasshouse_syslog:
       server: 192.168.1.110
       port: 514
       hostname: lgtv
-      sources: [system, glasshouse]
+      sources: [system, glasshouse, kernel]
       redact: true
 
   tasks:
@@ -63,15 +67,17 @@
         cmd: ssh -o BatchMode=yes -o ConnectTimeout=5 {{ tv_alias }} true
       changed_when: false
 
-    - name: Ensure our pubkey is in root's authorized_keys
+    # Appends only missing keys: other keys on the TV (e.g. Home Assistant's) must survive a run
+    - name: Ensure our pubkeys are in root's authorized_keys
       ansible.builtin.shell: |
         set -e
-        PUBKEY=$(cat "{{ tv_pubkey_path }}")
-        REMOTE=$(ssh {{ tv_alias }} 'cat /home/root/.ssh/authorized_keys 2>/dev/null' || true)
-        if [ "$REMOTE" != "$PUBKEY" ]; then
-          ssh {{ tv_alias }} "mkdir -p /home/root/.ssh && chmod 700 /home/root/.ssh && printf '%s\n' '$PUBKEY' > /home/root/.ssh/authorized_keys && chmod 600 /home/root/.ssh/authorized_keys && chown 0:0 /home/root/.ssh/authorized_keys"
+        PUBKEY=$(cat "{{ item }}")
+        REMOTE=$(ssh {{ tv_alias }} 'cat /home/root/.ssh/authorized_keys 2>/dev/null' </dev/null || true)
+        if ! printf '%s\n' "$REMOTE" | grep -qxF "$PUBKEY"; then
+          ssh {{ tv_alias }} "mkdir -p /home/root/.ssh && chmod 700 /home/root/.ssh && printf '%s\n' '$PUBKEY' >> /home/root/.ssh/authorized_keys && chmod 600 /home/root/.ssh/authorized_keys && chown 0:0 /home/root/.ssh/authorized_keys" </dev/null
           echo CHANGED
         fi
+      loop: "{{ tv_authorized_pubkeys }}"
       register: authkey_result
       changed_when: "'CHANGED' in authkey_result.stdout"
 

@@ -32,13 +32,22 @@
     amazoff_patchctl: /media/developer/apps/usr/palm/applications/com.amazoff.patcher/tools/patchctl.sh
     dropbear_bin: /media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/bin/dropbear
     initd_dir: /var/lib/webosbrew/init.d
-    # Glasshouse's built-in syslog forwarding to the PiKVM receiver (pikvm-playbook roles/syslog_receiver); kernel runs dmesg every 30 s
-    glasshouse_syslog:
-      server: 192.168.1.110
-      port: 514
-      hostname: lgtv
-      sources: [system, glasshouse, kernel]
-      redact: true
+    # Glasshouse config.json keys this playbook owns (dotted paths); everything else stays TV-owned
+    glasshouse_config:
+      # syslog forwarding to the PiKVM receiver (pikvm-playbook roles/syslog_receiver); kernel runs dmesg every 30 s
+      - key: syslog
+        value:
+          server: 192.168.1.110
+          port: 514
+          hostname: lgtv
+          sources: [system, glasshouse, kernel]
+          redact: true
+      # Watch time sensors in HA; records what is watched, kept on the TV for 13 months
+      - key: history.enabled
+        value: true
+      # Server Update entity in HA; one GitHub release check a day
+      - key: update.check
+        value: true
 
   tasks:
     # --- 1. SSH access -----------------------------------------------------
@@ -215,14 +224,16 @@
 
     # --- 5. Glasshouse (tvweb): dashboard + MQTT bridge --------------------
     # Installed/updated with Glasshouse's own server/deploy.sh from the local
-    # clone, and only when the clone's commit differs from the build on the TV
-    # (deploy.sh restarts the server, so it must not run on every playbook run).
+    # clone, only when the clone's version is newer than the one the TV runs, or
+    # the clone has uncommitted server changes (deploy.sh restarts the server, so
+    # it must not run on every playbook run). Versions, not build.json commits:
+    # the dashboard/HA self-update replaces tvweb.js but leaves build.json stale.
     # deploy.sh calls plain `ssh root@<ip>`, so the wrapper in files/ssh-wrapper
     # adds this TV's key. Deliberately NOT managed here:
     #   - /var/lib/tvweb/config.json (MQTT broker, topics, dashboard settings): the TV
     #     owns it (the dashboard saves into it, deploy.sh never overwrites it) and the
     #     MQTT password lives in pikvm-playbook's vault. See pikvm-playbook docs/mosquitto-tls.md.
-    #     Only exception: its `syslog` key, set below from glasshouse_syslog.
+    #     Only exceptions: the keys in glasshouse_config, set below.
     #   - Glasshouse Home (LG Home takeover): tried and switched off, it leaves no home
     #     screen until the server is up after boot.
     #   - Restoring ../glasshouse/*.json.vault: done from the dashboard's backup page.
@@ -232,13 +243,13 @@
         path: "{{ glasshouse_repo }}/server/deploy.sh"
       register: glasshouse_deploy_script
 
-    - name: Deploy Glasshouse when the TV's build differs from the local clone
+    - name: Deploy Glasshouse when the local clone is newer than the TV's server
       when: glasshouse_deploy_script.stat.exists
       block:
-        - name: Get the commit of the local Glasshouse clone
-          ansible.builtin.command:
-            cmd: git -C {{ glasshouse_repo }} rev-parse --short HEAD
-          register: glasshouse_local_commit
+        - name: Read the version of the local Glasshouse clone
+          ansible.builtin.shell: |
+            grep -m1 '^var TVWEB_VERSION' {{ glasshouse_repo }}/server/tvweb.js | sed 's/[^0-9.]//g'
+          register: glasshouse_local_version
           changed_when: false
 
         - name: Check the local clone for uncommitted changes under server/
@@ -247,18 +258,17 @@
           register: glasshouse_local_dirty
           changed_when: false
 
-        - name: Read the build Glasshouse reports on the TV (empty if not installed)
-          ansible.builtin.command:
-            cmd: ssh {{ tv_alias }} 'cat /var/lib/tvweb/build.json 2>/dev/null || true'
-          register: glasshouse_tv_build
+        - name: Read the version the TV's Glasshouse server runs (empty if not installed)
+          ansible.builtin.shell: |
+            ssh {{ tv_alias }} "grep -m1 '^var TVWEB_VERSION' /var/lib/tvweb/tvweb.js 2>/dev/null | sed 's/[^0-9.]//g'" </dev/null
+          register: glasshouse_tv_version
           changed_when: false
 
         - name: Decide whether Glasshouse needs (re)deploying
           ansible.builtin.set_fact:
             glasshouse_deploy_needed: >-
-              {{ glasshouse_tv_build.stdout | trim == ''
-                 or (glasshouse_tv_build.stdout | from_json).commit != glasshouse_local_commit.stdout
-                 or (glasshouse_tv_build.stdout | from_json).dirty | bool
+              {{ glasshouse_tv_version.stdout | trim == ''
+                 or glasshouse_local_version.stdout | trim is version(glasshouse_tv_version.stdout | trim, '>')
                  or glasshouse_local_dirty.stdout | trim != '' }}
 
         - name: Deploy Glasshouse (first install also adds the dashboard tile; updates leave the home screen alone)
@@ -270,20 +280,31 @@
           register: glasshouse_deploy_result
           changed_when: "'done - open' in glasshouse_deploy_result.stdout"
 
-    - name: Point Glasshouse's syslog forwarding at the PiKVM receiver
-      ansible.builtin.shell: |
-        set -e
-        scp -q {{ playbook_dir }}/files/tvweb-config-set.js {{ tv_alias }}:/tmp/tvweb-config-set.js
-        printf '%s' {{ glasshouse_syslog | to_json | quote }} | ssh {{ tv_alias }} 'node /tmp/tvweb-config-set.js syslog && rm -f /tmp/tvweb-config-set.js'
-      register: glasshouse_syslog_set
-      changed_when: "'CHANGED' in glasshouse_syslog_set.stdout"
+    - name: Copy the config helper to the TV
+      ansible.builtin.command:
+        cmd: scp -q {{ playbook_dir }}/files/tvweb-config-set.js {{ tv_alias }}:/tmp/tvweb-config-set.js
+      changed_when: false
 
-    - name: Restart Glasshouse so it picks up the syslog setting
+    - name: Set the Glasshouse config keys this playbook owns
+      ansible.builtin.shell: |
+        printf '%s' {{ item.value | to_json | quote }} | ssh {{ tv_alias }} 'node /tmp/tvweb-config-set.js {{ item.key }}'
+      loop: "{{ glasshouse_config }}"
+      loop_control:
+        label: "{{ item.key }}"
+      register: glasshouse_config_set
+      changed_when: "'CHANGED' in glasshouse_config_set.stdout"
+
+    - name: Remove the config helper from the TV
+      ansible.builtin.command:
+        cmd: ssh {{ tv_alias }} 'rm -f /tmp/tvweb-config-set.js'
+      changed_when: false
+
+    - name: Restart Glasshouse so it picks up the changed settings
       ansible.builtin.command:
         cmd: ssh {{ tv_alias }} '/var/lib/tvweb/tvwebctl restart'
-      when: glasshouse_syslog_set is changed
+      when: glasshouse_config_set is changed
 
-    - name: Report whether Glasshouse has a config.json on the TV (only its syslog key is managed here)
+    - name: Report whether Glasshouse has a config.json on the TV (only the glasshouse_config keys are managed here)
       ansible.builtin.command:
         cmd: ssh {{ tv_alias }} 'test -f /var/lib/tvweb/config.json && echo present || echo missing'
       register: glasshouse_config_state

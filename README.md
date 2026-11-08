@@ -154,12 +154,14 @@ tap), and it's unconfirmed whether this was actually done yet.
   stripped-down variant with no pointer and very few buttons.
 - **Glasshouse** (`tvweb`, dashboard on port 8080, MQTT bridge to Home
   Assistant) — installed via its own `server/deploy.sh`, which the playbook
-  runs (section 5 of `site.yml`) only when the local clone's commit differs
-  from `/var/lib/tvweb/build.json` on the TV. `/var/lib/tvweb/config.json`
+  runs (section 5 of `site.yml`) only when the local clone's `TVWEB_VERSION`
+  is newer than the one in the TV's `tvweb.js` (or the clone has uncommitted
+  server changes). Updates from the dashboard or HA's Server Update entity
+  leave `build.json` stale, so it is not used. `/var/lib/tvweb/config.json`
   (broker, topics, dashboard settings) is TV-owned and not managed here,
-  except its `syslog` key: the playbook points it at the PiKVM syslog
-  receiver (`glasshouse_syslog` in `site.yml`, logs in pikvm
-  `logs/lgtv/`). The broker side is in `pikvm-playbook` (`docs/mosquitto-tls.md`). Glasshouse
+  except the keys in `glasshouse_config` (`site.yml`): `syslog` to the PiKVM
+  receiver (logs in pikvm `logs/lgtv/`), `history.enabled` (watch time) and
+  `update.check` (HA's Server Update entity). The broker side is in `pikvm-playbook` (`docs/mosquitto-tls.md`). Glasshouse
   Home (taking over LG Home) was tried and switched off: it leaves no home
   screen for the first ~minute after boot. LG's Automatic Standby is set to
   2 hours (`automaticStandBy` in the `time` settings category), which is what

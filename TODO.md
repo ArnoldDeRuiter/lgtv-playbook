@@ -1,3 +1,3 @@
 # TODO
 
-- [ ] Ship the TV's syslog to the PiKVM receiver (192.168.1.110 UDP 514, pikvm-playbook `roles/syslog_receiver`, lands in a per-host dir there). Glasshouse has built-in syslog: set `"syslog": {"server": "192.168.1.110", "port": 514, "hostname": "lgtv", "sources": ["system", "glasshouse"], "redact": true}` in the TV's `/var/lib/tvweb/config.json`, restart tvweb, check `logs/lgtv/` on pikvm. Keep `kernel` off (TV memory-tight). Put it in `ansible/site.yml`. Test live. Also tracked in unraid-playbook `docs/TODO.md`.
+- [x] 2026-11-08: TV syslog to the PiKVM receiver. `ansible/site.yml` sets only the `syslog` key of `/var/lib/tvweb/config.json` (`glasshouse_syslog` var, sources `system` + `glasshouse`, kernel off) and restarts tvweb when it changed. Logs land in pikvm `logs/lgtv/`; pikvm syslog-ng reparses Glasshouse's RFC 5424 lines (`p_rfc5424`).

@@ -156,8 +156,10 @@ tap), and it's unconfirmed whether this was actually done yet.
   Assistant) — installed via its own `server/deploy.sh`, which the playbook
   runs (section 5 of `site.yml`) only when the local clone's commit differs
   from `/var/lib/tvweb/build.json` on the TV. `/var/lib/tvweb/config.json`
-  (broker, topics, dashboard settings) is TV-owned and not managed here; the
-  broker side is in `pikvm-playbook` (`docs/mosquitto-tls.md`). Glasshouse
+  (broker, topics, dashboard settings) is TV-owned and not managed here,
+  except its `syslog` key: the playbook points it at the PiKVM syslog
+  receiver (`glasshouse_syslog` in `site.yml`, logs in pikvm
+  `logs/lgtv/`). The broker side is in `pikvm-playbook` (`docs/mosquitto-tls.md`). Glasshouse
   Home (taking over LG Home) was tried and switched off: it leaves no home
   screen for the first ~minute after boot. LG's Automatic Standby is set to
   2 hours (`automaticStandBy` in the `time` settings category), which is what

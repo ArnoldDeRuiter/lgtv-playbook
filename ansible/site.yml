@@ -28,6 +28,13 @@
     amazoff_patchctl: /media/developer/apps/usr/palm/applications/com.amazoff.patcher/tools/patchctl.sh
     dropbear_bin: /media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/bin/dropbear
     initd_dir: /var/lib/webosbrew/init.d
+    # Glasshouse's built-in syslog forwarding to the PiKVM receiver (pikvm-playbook roles/syslog_receiver); kernel off, TV is memory-tight
+    glasshouse_syslog:
+      server: 192.168.1.110
+      port: 514
+      hostname: lgtv
+      sources: [system, glasshouse]
+      redact: true
 
   tasks:
     # --- 1. SSH access -----------------------------------------------------
@@ -209,6 +216,7 @@
     #   - /var/lib/tvweb/config.json (MQTT broker, topics, dashboard settings): the TV
     #     owns it (the dashboard saves into it, deploy.sh never overwrites it) and the
     #     MQTT password lives in pikvm-playbook's vault. See pikvm-playbook docs/mosquitto-tls.md.
+    #     Only exception: its `syslog` key, set below from glasshouse_syslog.
     #   - Glasshouse Home (LG Home takeover): tried and switched off, it leaves no home
     #     screen until the server is up after boot.
     #   - Restoring ../glasshouse/*.json.vault: done from the dashboard's backup page.
@@ -256,7 +264,20 @@
           register: glasshouse_deploy_result
           changed_when: "'done - open' in glasshouse_deploy_result.stdout"
 
-    - name: Report whether Glasshouse has a config.json on the TV (never changed by this playbook)
+    - name: Point Glasshouse's syslog forwarding at the PiKVM receiver
+      ansible.builtin.shell: |
+        set -e
+        scp -q {{ playbook_dir }}/files/tvweb-config-set.js {{ tv_alias }}:/tmp/tvweb-config-set.js
+        printf '%s' {{ glasshouse_syslog | to_json | quote }} | ssh {{ tv_alias }} 'node /tmp/tvweb-config-set.js syslog && rm -f /tmp/tvweb-config-set.js'
+      register: glasshouse_syslog_set
+      changed_when: "'CHANGED' in glasshouse_syslog_set.stdout"
+
+    - name: Restart Glasshouse so it picks up the syslog setting
+      ansible.builtin.command:
+        cmd: ssh {{ tv_alias }} '/var/lib/tvweb/tvwebctl restart'
+      when: glasshouse_syslog_set is changed
+
+    - name: Report whether Glasshouse has a config.json on the TV (only its syslog key is managed here)
       ansible.builtin.command:
         cmd: ssh {{ tv_alias }} 'test -f /var/lib/tvweb/config.json && echo present || echo missing'
       register: glasshouse_config_state

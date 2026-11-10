@@ -1,5 +1,10 @@
 # AGENTS.md
 
+Read `../ebook/AGENTS.md` first: hosts, SSH, shared rules.
+
+**The TV can be bricked by config or software changes on it. Change nothing on the TV that this playbook or
+TV-HANDOVER.md does not already describe, and ask Captain first when unsure.** It is `192.168.1.120` (fixed).
+
 TV config/customization repo — pushed to GitHub as `lgtv-playbook` (local
 dir is still named `lgtv`; that's intentional, not stale). Read
 `~/git/personal/slopbro/TV-HANDOVER.md` first for the TV's IP/SSH access,

@@ -12,7 +12,7 @@ import socket
 import sys
 import time
 
-TV_IP = "192.168.1.210"
+TV_IP = "192.168.1.120"
 PUBKEY_PATH = os.path.expanduser("~/.ssh/id_ed25519_tvtje.pub")
 DROPBEAR_BIN = (
     "/media/developer/apps/usr/palm/services/"

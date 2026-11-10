@@ -9,7 +9,7 @@
 # file/etc.) need Python on the *remote* host, so this can't be a normal
 # `hosts: tvtje` playbook. Instead everything runs on `hosts: localhost` and
 # shells out to `ssh tvtje` / `scp ... tvtje:...` — the `tvtje` alias must
-# already exist in ~/.ssh/config (root@192.168.1.210, dedicated key,
+# already exist in ~/.ssh/config (root@192.168.1.120, dedicated key,
 # ~/.ssh/id_ed25519_tvtje). No special Ansible collections needed, builtin
 # modules only.
 #

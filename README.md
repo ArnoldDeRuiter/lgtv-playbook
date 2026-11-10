@@ -1,6 +1,6 @@
 # LG webOS TV — rooting & customization notes
 
-TV: `tvtje` (DHCP, the IP drifts; the alias in `~/.ssh/config` is the source of truth, currently 192.168.1.120), LG G5 (2025 OLED), webOS TV 10.3.1 (marketing
+TV: `tvtje` (fixed at 192.168.1.120 since 2026-11-10; the alias in `~/.ssh/config` and `TV_IP` in `ansible/files/telnet_bootstrap.py` must match it), LG G5 (2025 OLED), webOS TV 10.3.1 (marketing
 name "webOS 26"). Rooted via [SlopBro](https://github.com/throwaway96/slopbro)
 (separate repo — the exploit/root tooling itself is out of scope here).
 
